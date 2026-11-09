@@ -19,29 +19,55 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-if(NOT EXISTS "${SI_ROM}")
-  message(FATAL_ERROR "ROM not found: ${SI_ROM}\n"
-    "Copy space-invaders.rom into rom/ or configure with -DSI_ROM=/path/to/space-invaders.rom")
-endif()
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
-
 # ---------------------------------------------------------------- recompilation
+# generated/invaders_recomp.c is committed, so the game builds without Python or
+# the ROM. When both are available it is regenerated into the build tree instead
+# (INVADERS_REGENERATE=AUTO), and a test checks the committed copy is current.
 set(RECOMP_PY   "${CMAKE_CURRENT_SOURCE_DIR}/recomp/recomp8080.py")
 set(SI_HINTS    "${CMAKE_CURRENT_SOURCE_DIR}/config/invaders.hints")
 set(SI_SYMBOLS  "${CMAKE_CURRENT_SOURCE_DIR}/config/invaders.sym")
-set(SI_GEN_C    "${CMAKE_CURRENT_BINARY_DIR}/generated/invaders_recomp.c")
+set(SI_COMMITTED_C "${CMAKE_CURRENT_SOURCE_DIR}/generated/invaders_recomp.c")
+set(INVADERS_REGENERATE AUTO CACHE STRING "Regenerate the C from the ROM: AUTO, ON or OFF")
+set_property(CACHE INVADERS_REGENERATE PROPERTY STRINGS AUTO ON OFF)
+
 set(RECOMP_ARGS --entry 0x0000 --entry 0x0008 --entry 0x0010
                 --code-range 0x0000-0x1fff --hints "${SI_HINTS}" --symbols "${SI_SYMBOLS}")
 if(NOT RECOMP_FLAG_OPT)
   list(APPEND RECOMP_ARGS --no-flag-opt)
 endif()
-add_custom_command(
-  OUTPUT "${SI_GEN_C}"
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-  COMMAND Python3::Interpreter "${RECOMP_PY}" "${SI_ROM}" ${RECOMP_ARGS} -o "${SI_GEN_C}"
-  DEPENDS "${RECOMP_PY}" "${SI_HINTS}" "${SI_SYMBOLS}" "${SI_ROM}"
-  COMMENT "Recompiling Space Invaders 8080 code to C"
-  VERBATIM)
+
+find_package(Python3 COMPONENTS Interpreter)
+set(have_rom FALSE)
+if(EXISTS "${SI_ROM}")
+  set(have_rom TRUE)
+endif()
+set(can_regen FALSE)
+if(Python3_Interpreter_FOUND AND have_rom)
+  set(can_regen TRUE)
+endif()
+
+if(INVADERS_REGENERATE STREQUAL "ON" OR (INVADERS_REGENERATE STREQUAL "AUTO" AND can_regen)
+   OR NOT RECOMP_FLAG_OPT)
+  if(NOT can_regen)
+    message(FATAL_ERROR "Regenerating needs Python 3 and the ROM (${SI_ROM}).")
+  endif()
+  set(SI_GEN_C "${CMAKE_CURRENT_BINARY_DIR}/generated/invaders_recomp.c")
+  add_custom_command(
+    OUTPUT "${SI_GEN_C}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND Python3::Interpreter "${RECOMP_PY}" "${SI_ROM}" ${RECOMP_ARGS} -o "${SI_GEN_C}"
+    DEPENDS "${RECOMP_PY}" "${SI_HINTS}" "${SI_SYMBOLS}" "${SI_ROM}"
+    COMMENT "Recompiling Space Invaders 8080 code to C"
+    VERBATIM)
+  message(STATUS "invaders: regenerating C from ${SI_ROM}")
+else()
+  set(SI_GEN_C "${SI_COMMITTED_C}")
+  message(STATUS "invaders: using committed ${SI_GEN_C}")
+endif()
+if(NOT have_rom)
+  message(STATUS "invaders: ROM not found at ${SI_ROM} - it is still needed at run time "
+                 "(next to the executable or passed on the command line); tests are skipped")
+endif()
 
 # ---------------------------------------------------------------- libraries
 set(RT "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
@@ -97,8 +123,11 @@ if(INVADERS_BUILD_FRONTEND)
   endif()
   # Put the ROM, sounds and the SDL3 shared library next to the executable
   add_custom_command(TARGET invaders POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SI_ROM}" "$<TARGET_FILE_DIR:invaders>/space-invaders.rom"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL3::SDL3> "$<TARGET_FILE_DIR:invaders>")
+  if(have_rom)
+    add_custom_command(TARGET invaders POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SI_ROM}" "$<TARGET_FILE_DIR:invaders>/space-invaders.rom")
+  endif()
   if(EXISTS "${SI_SOUNDS_DIR}")
     add_custom_command(TARGET invaders POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_directory "${SI_SOUNDS_DIR}" "$<TARGET_FILE_DIR:invaders>/sounds")
@@ -128,16 +157,26 @@ if(INVADERS_BUILD_TESTS)
   else()
     set(cmp_mode --digest-full)
   endif()
+  if(have_rom)
   add_test(NAME lockstep_vs_interpreter
     COMMAND ${CMAKE_COMMAND}
       -DRECOMP=$<TARGET_FILE:si_headless> -DINTERP=$<TARGET_FILE:si_headless_interp>
       -DROM=${SI_ROM} -DFRAMES=60000 -DMODE=${cmp_mode} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/lockstep
       -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare.cmake)
+  endif()
+
+  # The committed generated/invaders_recomp.c must match what the recompiler
+  # produces now (catches forgetting to refresh it after changing the tool or config).
+  if(can_regen AND RECOMP_FLAG_OPT)
+    add_test(NAME committed_c_up_to_date
+      COMMAND ${CMAKE_COMMAND} -E compare_files --ignore-eol "${SI_COMMITTED_C}"
+              "${CMAKE_CURRENT_BINARY_DIR}/generated/invaders_recomp.c")
+  endif()
 
   # Optional CPU diagnostic (CP/M .COM, e.g. cpudiag.bin or TST8080.COM) through
   # the same recompiler.
   set(CPM_TEST_PROGRAM "" CACHE FILEPATH "Optional CP/M CPU test program to recompile and run")
-  if(CPM_TEST_PROGRAM AND EXISTS "${CPM_TEST_PROGRAM}")
+  if(CPM_TEST_PROGRAM AND EXISTS "${CPM_TEST_PROGRAM}" AND Python3_Interpreter_FOUND)
     set(CPM_GEN_C "${CMAKE_CURRENT_BINARY_DIR}/generated/cpm_recomp.c")
     add_custom_command(OUTPUT "${CPM_GEN_C}"
       COMMAND Python3::Interpreter "${RECOMP_PY}" "${CPM_TEST_PROGRAM}" --base 0x100 --entry 0x100

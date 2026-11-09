@@ -9,26 +9,42 @@ It started from [cbeust/space-invade.rs](https://github.com/cbeust/space-invade.
 8080 emulator in Rust, and uses the hardware documentation that project links to.
 
 ```
-space-invaders.rom ──► recomp/recomp8080.py ──► invaders_recomp.c ──► C compiler ──► invaders(.exe)
+space-invaders.rom ──► recomp/recomp8080.py ──► generated/invaders_recomp.c ──► C compiler ──► invaders(.exe)
                          + config/invaders.hints     + runtime/, machines/invaders/, hosts/main_sdl3.c
                          + config/invaders.sym
 ```
 
 ## Building
 
-You need CMake ≥ 3.16, Python 3, a C11 compiler, and the ROM. SDL3 is used if CMake can
-find it; otherwise it is downloaded and built from GitHub automatically
-(`INVADERS_FETCH_SDL3=ON`, tag `release-3.4.20`).
+You need CMake ≥ 3.16 and a C11 compiler. SDL3 is used if CMake can find it; otherwise
+it is downloaded and built from GitHub automatically (`INVADERS_FETCH_SDL3=ON`, tag
+`release-3.4.20`).
 
-**ROM and sounds are not in this repository.** Put the 8 KB ROM (invaders.h, .g, .f, .e
-concatenated, as shipped in `space-invade.rs/space-invaders.rom`) at
-`rom/space-invaders.rom`, and optionally the WAV samples (`space-invade.rs/sounds/*.wav`)
-in `rom/sounds/`. Or point the build at them with `-DSI_ROM=...` and `-DSI_SOUNDS_DIR=...`.
+The recompiled code is committed as
+[`generated/invaders_recomp.c`](generated/invaders_recomp.c), so building the game needs
+neither Python nor the ROM. If Python 3 and the ROM are both present, CMake regenerates
+the file in the build tree instead (`INVADERS_REGENERATE=AUTO`; set it to `ON` or `OFF`
+to force either way). A test then checks that the committed copy is still current.
+After changing the recompiler, hints or symbols, refresh it with:
+
+```sh
+python3 recomp/recomp8080.py rom/space-invaders.rom --entry 0x0000 --entry 0x0008 --entry 0x0010 \
+    --code-range 0x0000-0x1fff --hints config/invaders.hints --symbols config/invaders.sym \
+    -o generated/invaders_recomp.c
+```
+
+**The ROM is still needed at run time.** The code reads sprites, text and tables from it.
+Put the 8 KB ROM (invaders.h, .g, .f, .e concatenated, as shipped in
+`space-invade.rs/space-invaders.rom`) at `rom/space-invaders.rom`, and optionally the WAV
+samples (`space-invade.rs/sounds/*.wav`) in `rom/sounds/`. The build copies them next to
+the executable. Or pass the ROM path when you run the game. Neither is in this
+repository. The lock-step tests run only when the ROM is available
+(`-DSI_ROM=...`, `-DSI_SOUNDS_DIR=...`).
 
 ### Linux x64
 
 ```sh
-sudo apt install build-essential cmake ninja-build python3   # plus SDL3, or let CMake fetch it
+sudo apt install build-essential cmake ninja-build   # plus SDL3, or let CMake fetch it
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ./build/invaders
@@ -158,7 +174,7 @@ Based on the Computer Archeology hardware page (which quotes MAME's `mw8080bw` d
 | Recompiled game vs interpreter, 60,000-frame scripted session (attract, 1P and 2P games, tilt) | identical state every frame (full state with `RECOMP_FLAG_OPT=OFF`; excluding flags and the stack page with it on) |
 | Final frame image | pixel-identical |
 
-`ctest` runs the lock-step comparison, plus the CPU diagnostic if
+`ctest` runs the lock-step comparison and the committed-C freshness check, plus the CPU diagnostic if
 `-DCPM_TEST_PROGRAM=path/to/cpudiag.bin` is given. The exercisers modify their own code
 (they build each test instruction in RAM), so they validate the interpreter. A static
 recompiler, by design, can't run self-modifying code.
@@ -175,6 +191,7 @@ Speed: about 1,700× real time for the recompiled core, about 2× the interprete
 
 ```
 recomp/recomp8080.py      the recompiler
+generated/                the recompiled game code (output of recomp8080.py, committed)
 config/invaders.hints     extra entry points (PCHL targets)
 config/invaders.sym       names from the Computer Archeology listing
 runtime/                  CPU state, interrupts, reference interpreter
