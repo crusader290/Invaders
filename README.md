@@ -14,7 +14,32 @@ space-invaders.rom ──► recomp/recomp8080.py ──► generated/invaders_r
                          + config/invaders.sym
 ```
 
-## Building
+## Quick start
+
+```sh
+./build.sh --run            # Linux x64
+./build.sh --windows        # Windows x64 .exe, cross-compiled from Linux with MinGW-w64
+```
+
+```bat
+build.bat run               :: Windows x64, Visual Studio 2019 or later
+```
+
+The scripts fetch whatever is missing:
+
+- `build.sh` installs the toolchain and SDL3 (or SDL3's build dependencies) with
+  apt, dnf, pacman or zypper, using `sudo` if needed. `--no-deps` skips this.
+- `build.bat` finds Visual Studio with `vswhere` and downloads the official prebuilt
+  SDL3 3.4.20 package into `deps/`.
+- Both download the ROM and sound samples from
+  [cbeust/space-invade.rs](https://github.com/cbeust/space-invade.rs), pinned to a
+  commit, into `rom/`. Every download is checked against a SHA-256 hash. `--no-assets` /
+  `noassets` skips this; an existing `rom/space-invaders.rom` is never replaced.
+
+Other options: `--debug`, `--clean`, `--test`, `--regen`, `-j N` (`build.sh`) and
+`debug`, `clean`, `test`, `regen` (`build.bat`). Output goes to `build/<platform>-<config>/`.
+
+## Building manually
 
 You need CMake ≥ 3.16 and a C11 compiler. SDL3 is used if CMake can find it; otherwise
 it is downloaded and built from GitHub automatically (`INVADERS_FETCH_SDL3=ON`, tag
@@ -205,6 +230,7 @@ hosts/fuzz_run.c          differential fuzz runner
 tools/                    make_hints.py, import_listing.py, fuzz_gen.py
 tests/compare.cmake       CTest lock-step comparison
 cmake/                    MinGW-w64 cross toolchain
+build.sh, build.bat       one-step builds with dependency fetching
 ```
 
 ## Resources

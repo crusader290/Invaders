@@ -52,6 +52,7 @@ if(INVADERS_REGENERATE STREQUAL "ON" OR (INVADERS_REGENERATE STREQUAL "AUTO" AND
     message(FATAL_ERROR "Regenerating needs Python 3 and the ROM (${SI_ROM}).")
   endif()
   set(SI_GEN_C "${CMAKE_CURRENT_BINARY_DIR}/generated/invaders_recomp.c")
+  set(regenerating TRUE)
   add_custom_command(
     OUTPUT "${SI_GEN_C}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
@@ -167,7 +168,7 @@ if(INVADERS_BUILD_TESTS)
 
   # The committed generated/invaders_recomp.c must match what the recompiler
   # produces now (catches forgetting to refresh it after changing the tool or config).
-  if(can_regen AND RECOMP_FLAG_OPT)
+  if(regenerating AND RECOMP_FLAG_OPT)
     add_test(NAME committed_c_up_to_date
       COMMAND ${CMAKE_COMMAND} -E compare_files --ignore-eol "${SI_COMMITTED_C}"
               "${CMAKE_CURRENT_BINARY_DIR}/generated/invaders_recomp.c")

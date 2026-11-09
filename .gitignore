@@ -8,3 +8,6 @@ __pycache__/
 # copyrighted game data - supply your own (see README)
 rom/*
 !rom/README.md
+
+# downloaded dependencies (build.sh / build.bat)
+deps/
