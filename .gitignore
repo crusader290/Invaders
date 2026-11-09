@@ -1,0 +1,10 @@
+# build trees
+build/
+build-*/
+out/
+.vs/
+*.user
+__pycache__/
+# copyrighted game data - supply your own (see README)
+rom/*
+!rom/README.md
