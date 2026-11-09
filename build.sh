@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build Space Invaders (static recompilation) on Linux x64, or cross-compile the
 # Windows x64 version with MinGW-w64. Installs missing tools/libraries with the
-# system package manager and downloads the ROM, sounds and (for --windows) SDL3.
+# system package manager and, for --windows, downloads the SDL3 MinGW package.
+# The ROM (roms/invaders.zip) and sounds (sounds/) are part of the repository.
 #
 #   ./build.sh [options]
 #     --debug        Debug build (default: Release)
@@ -11,7 +12,6 @@
 #     --run          start the game after building
 #     --regen        always regenerate the C from the ROM (default: auto)
 #     --no-deps      don't install system packages
-#     --no-assets    don't download the ROM and sounds
 #     -j N           parallel build jobs
 #     -h, --help     show this help
 set -euo pipefail
@@ -21,26 +21,11 @@ cd "$ROOT"
 
 CONFIG=Release
 TARGET=linux
-CLEAN=0 TEST=0 RUN=0 DEPS=1 ASSETS=1 REGEN=AUTO JOBS=""
+CLEAN=0 TEST=0 RUN=0 DEPS=1 REGEN=AUTO JOBS=""
 
 SDL3_VERSION=3.4.20
 SDL3_MINGW_SHA256=d2d3bf3fb97a90b22e908a306d7362631ef1bab229d988fe6669595dc29cd9ed
-# ROM and samples from cbeust/space-invade.rs, pinned to a known commit
-UPSTREAM=https://raw.githubusercontent.com/cbeust/space-invade.rs/3cecc86da877fb65c55779906aae6219e3b26361
-ASSET_LIST="
-space-invaders.rom        7446e0994117596de5206519e693f8875ff3455e0be121d5cb975c3bcc224c4e
-sounds/explosion.wav      6e8215095abbc4be6574df59569a6ebeb9eb2d92ce0768ab982a85ecbf01c652
-sounds/fastinvader1.wav   c6d4fa9b0ecf0e137a5c140bfd14bcea781407f3437610a62fa2f3e9efb46f99
-sounds/fastinvader2.wav   5af096808112041248c1f4606cdaf819c197f29cb1f4b2aab6cbf4eea933a584
-sounds/fastinvader3.wav   dc2d67cc20030fc7c49cd2d1b0a08639b4d07d10121826b2ae02fb3a6895c7b8
-sounds/fastinvader4.wav   d018ea9aaa52a7ef5889c6e5ccebfeab1c513a62c5ef9f3b8038df652ea725ce
-sounds/invaderkilled.wav  29f56726f059381f7e4c79b97028b6b2c7bce1204a2f97df9fce89fb99d3a177
-sounds/shoot.wav          016a223e5e86db3e4ac3f731cc1e99a7022eecce758f21db900c224653fa5654
-sounds/ufo_highpitch.wav  8d3a0d9d4c875d71d245f95cdd7a72d68e3673a0164340884b0bf6ebe59b1ef4
-sounds/ufo_lowpitch.wav   1aa034fc47cc4c994f38f544caecd5f0e27371b7d753dc7a1901300e5e1b5c4e
-"
-
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
 log()   { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 die()   { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -55,7 +40,6 @@ while [ $# -gt 0 ]; do
     --run) RUN=1 ;;
     --regen) REGEN=ON ;;
     --no-deps) DEPS=0 ;;
-    --no-assets) ASSETS=0 ;;
     -j) shift; JOBS="${1:-}" ;;
     -j*) JOBS="${1#-j}" ;;
     -h|--help) usage; exit 0 ;;
@@ -148,9 +132,9 @@ install_deps() {
 
 if [ "$DEPS" = 1 ]; then install_deps; fi
 have cmake || die "cmake not found (install it, or drop --no-deps)"
-have curl || [ "$ASSETS" = 0 ] || die "curl not found"
+[ "$TARGET" = linux ] || have curl || die "curl not found"
 
-# ------------------------------------------------------------------ downloads
+# ------------------------------------------------------------------ download helper
 sha256_of() {
   if have sha256sum; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
@@ -168,18 +152,8 @@ fetch() {   # fetch <url> <dest> <sha256>
   mv "$dest.part" "$dest"
 }
 
-if [ "$ASSETS" = 1 ]; then
-  while read -r path sha; do
-    [ -n "$path" ] || continue
-    if [ "$path" = space-invaders.rom ] && [ -f rom/space-invaders.rom ] && \
-       [ "$(sha256_of rom/space-invaders.rom)" != "$sha" ]; then
-      warn "rom/space-invaders.rom differs from the known dump - keeping your file"
-      continue
-    fi
-    fetch "$UPSTREAM/$path" "rom/$path" "$sha"
-  done <<< "$ASSET_LIST"
-fi
-[ -f rom/space-invaders.rom ] || warn "no ROM in rom/ - the build uses the committed C; pass the ROM when you run the game"
+[ -f roms/invaders.zip ] || [ -f roms/space-invaders.rom ] || \
+  warn "no ROM in roms/ - the build uses the committed C; pass the ROM when you run the game"
 
 # ------------------------------------------------------------------ configure + build
 GEN=()

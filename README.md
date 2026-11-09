@@ -31,40 +31,39 @@ The scripts fetch whatever is missing:
   apt, dnf, pacman or zypper, using `sudo` if needed. `--no-deps` skips this.
 - `build.bat` finds Visual Studio with `vswhere` and downloads the official prebuilt
   SDL3 3.4.20 package into `deps/`.
-- Both download the ROM and sound samples from
-  [cbeust/space-invade.rs](https://github.com/cbeust/space-invade.rs), pinned to a
-  commit, into `rom/`. Every download is checked against a SHA-256 hash. `--no-assets` /
-  `noassets` skips this; an existing `rom/space-invaders.rom` is never replaced.
+- The ROM and sounds are in the repository, so nothing else is downloaded.
 
 Other options: `--debug`, `--clean`, `--test`, `--regen`, `-j N` (`build.sh`) and
 `debug`, `clean`, `test`, `regen` (`build.bat`). Output goes to `build/<platform>-<config>/`.
 
 ## Building manually
 
-You need CMake ≥ 3.16 and a C11 compiler. SDL3 is used if CMake can find it; otherwise
+You need CMake ≥ 3.18 and a C11 compiler. SDL3 is used if CMake can find it; otherwise
 it is downloaded and built from GitHub automatically (`INVADERS_FETCH_SDL3=ON`, tag
 `release-3.4.20`).
 
 The recompiled code is committed as
 [`generated/invaders_recomp.c`](generated/invaders_recomp.c), so building the game needs
-neither Python nor the ROM. If Python 3 and the ROM are both present, CMake regenerates
-the file in the build tree instead (`INVADERS_REGENERATE=AUTO`; set it to `ON` or `OFF`
+Python. When Python 3 is available, CMake regenerates the file in the build tree instead (`INVADERS_REGENERATE=AUTO`; set it to `ON` or `OFF`
 to force either way). A test then checks that the committed copy is still current.
 After changing the recompiler, hints or symbols, refresh it with:
 
 ```sh
-python3 recomp/recomp8080.py rom/space-invaders.rom --entry 0x0000 --entry 0x0008 --entry 0x0010 \
+python3 recomp/recomp8080.py roms/invaders.zip --entry 0x0000 --entry 0x0008 --entry 0x0010 \
     --code-range 0x0000-0x1fff --hints config/invaders.hints --symbols config/invaders.sym \
     -o generated/invaders_recomp.c
 ```
 
-**The ROM is still needed at run time.** The code reads sprites, text and tables from it.
-Put the 8 KB ROM (invaders.h, .g, .f, .e concatenated, as shipped in
-`space-invade.rs/space-invaders.rom`) at `rom/space-invaders.rom`, and optionally the WAV
-samples (`space-invade.rs/sounds/*.wav`) in `rom/sounds/`. The build copies them next to
-the executable. Or pass the ROM path when you run the game. Neither is in this
-repository. The lock-step tests run only when the ROM is available
-(`-DSI_ROM=...`, `-DSI_SOUNDS_DIR=...`).
+### ROM and sounds
+
+[`roms/invaders.zip`](roms) is the MAME *invaders* set and [`sounds/`](sounds) holds the
+WAV samples, both from [cbeust/space-invade.rs](https://github.com/cbeust/space-invade.rs).
+At configure time CMake joins the zip's chips (h, g, f, e) into the 8 KB program image
+and checks its SHA-256. The build then copies the image and `sounds/` next to the
+executable, because the recompiled code still reads sprites, text and tables from the ROM
+at run time. To use another image, put it at `roms/space-invaders.rom` (git-ignored) or
+pass `-DSI_ROM=...`; `-DSI_SOUNDS_DIR=...` picks another sample directory. You can also
+pass a ROM path when you run the game.
 
 ### Linux x64
 
@@ -217,6 +216,8 @@ Speed: about 1,700× real time for the recompiled core, about 2× the interprete
 ```
 recomp/recomp8080.py      the recompiler
 generated/                the recompiled game code (output of recomp8080.py, committed)
+roms/invaders.zip         the ROM (MAME set)
+sounds/                   WAV samples
 config/invaders.hints     extra entry points (PCHL targets)
 config/invaders.sym       names from the Computer Archeology listing
 runtime/                  CPU state, interrupts, reference interpreter

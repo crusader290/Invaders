@@ -5,9 +5,8 @@ out/
 .vs/
 *.user
 __pycache__/
-# copyrighted game data - supply your own (see README)
-rom/*
-!rom/README.md
+# local ROM override (the committed MAME set roms/invaders.zip is used otherwise)
+roms/space-invaders.rom
 
 # downloaded dependencies (build.sh / build.bat)
 deps/

@@ -1,11 +1,11 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.18)
 project(invaders_recomp C)
 
 # ---------------------------------------------------------------- options
-set(SI_ROM "${CMAKE_CURRENT_SOURCE_DIR}/rom/space-invaders.rom" CACHE FILEPATH
-    "Space Invaders ROM image (8 KB: invaders.h/g/f/e concatenated)")
-set(SI_SOUNDS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/rom/sounds" CACHE PATH
-    "Directory with the WAV samples, copied next to the executable if it exists")
+set(SI_ROM "" CACHE FILEPATH
+    "ROM image to use instead of roms/invaders.zip (8 KB: invaders.h/g/f/e concatenated)")
+set(SI_SOUNDS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/sounds" CACHE PATH
+    "Directory with the WAV samples, copied next to the executable")
 option(RECOMP_FALLBACK "Interpret any address the recompiler did not discover instead of aborting" ON)
 option(RECOMP_FLAG_OPT "Remove flag computations whose results are never read" ON)
 option(INVADERS_BUILD_FRONTEND "Build the SDL3 game executable" ON)
@@ -18,6 +18,48 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+
+# ---------------------------------------------------------------- ROM
+# Order: -DSI_ROM=..., then roms/space-invaders.rom (a local override, not
+# committed), then the MAME set roms/invaders.zip, whose four 2 KB chips
+# (invaders.h, .g, .f, .e) are concatenated in that order at configure time.
+set(SI_ROM_SHA256 7446e0994117596de5206519e693f8875ff3455e0be121d5cb975c3bcc224c4e)
+set(SI_ROM_ZIP "${CMAKE_CURRENT_SOURCE_DIR}/roms/invaders.zip")
+if(SI_ROM)
+  set(SI_ROM_PATH "${SI_ROM}")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/space-invaders.rom")
+  set(SI_ROM_PATH "${CMAKE_CURRENT_SOURCE_DIR}/roms/space-invaders.rom")
+elseif(EXISTS "${SI_ROM_ZIP}")
+  set(rom_dir "${CMAKE_CURRENT_BINARY_DIR}/rom")
+  set(SI_ROM_PATH "${rom_dir}/space-invaders.rom")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SI_ROM_ZIP}")
+  file(REMOVE_RECURSE "${rom_dir}")
+  file(ARCHIVE_EXTRACT INPUT "${SI_ROM_ZIP}" DESTINATION "${rom_dir}/chips")
+  set(chips)
+  foreach(chip h g f e)
+    file(GLOB_RECURSE found "${rom_dir}/chips/invaders.${chip}")
+    if(NOT found)
+      message(FATAL_ERROR "invaders.${chip} missing from ${SI_ROM_ZIP}")
+    endif()
+    list(GET found 0 found)
+    list(APPEND chips "${found}")
+  endforeach()
+  execute_process(COMMAND ${CMAKE_COMMAND} -E cat ${chips}
+                  OUTPUT_FILE "${SI_ROM_PATH}" RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "could not assemble the ROM from ${SI_ROM_ZIP}")
+  endif()
+endif()
+if(SI_ROM_PATH AND EXISTS "${SI_ROM_PATH}")
+  file(SHA256 "${SI_ROM_PATH}" rom_hash)
+  if(rom_hash STREQUAL SI_ROM_SHA256)
+    message(STATUS "invaders: ROM ${SI_ROM_PATH} (verified)")
+  elseif(SI_ROM)
+    message(WARNING "${SI_ROM_PATH} is not the known Space Invaders ROM (sha256 ${rom_hash})")
+  else()
+    message(FATAL_ERROR "${SI_ROM_PATH} has an unexpected SHA-256 (${rom_hash})")
+  endif()
+endif()
 
 # ---------------------------------------------------------------- recompilation
 # generated/invaders_recomp.c is committed, so the game builds without Python or
@@ -38,7 +80,7 @@ endif()
 
 find_package(Python3 COMPONENTS Interpreter)
 set(have_rom FALSE)
-if(EXISTS "${SI_ROM}")
+if(SI_ROM_PATH AND EXISTS "${SI_ROM_PATH}")
   set(have_rom TRUE)
 endif()
 set(can_regen FALSE)
@@ -49,24 +91,24 @@ endif()
 if(INVADERS_REGENERATE STREQUAL "ON" OR (INVADERS_REGENERATE STREQUAL "AUTO" AND can_regen)
    OR NOT RECOMP_FLAG_OPT)
   if(NOT can_regen)
-    message(FATAL_ERROR "Regenerating needs Python 3 and the ROM (${SI_ROM}).")
+    message(FATAL_ERROR "Regenerating needs Python 3 and the ROM (${SI_ROM_PATH}).")
   endif()
   set(SI_GEN_C "${CMAKE_CURRENT_BINARY_DIR}/generated/invaders_recomp.c")
   set(regenerating TRUE)
   add_custom_command(
     OUTPUT "${SI_GEN_C}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND Python3::Interpreter "${RECOMP_PY}" "${SI_ROM}" ${RECOMP_ARGS} -o "${SI_GEN_C}"
-    DEPENDS "${RECOMP_PY}" "${SI_HINTS}" "${SI_SYMBOLS}" "${SI_ROM}"
+    COMMAND Python3::Interpreter "${RECOMP_PY}" "${SI_ROM_PATH}" ${RECOMP_ARGS} -o "${SI_GEN_C}"
+    DEPENDS "${RECOMP_PY}" "${SI_HINTS}" "${SI_SYMBOLS}" "${SI_ROM_PATH}"
     COMMENT "Recompiling Space Invaders 8080 code to C"
     VERBATIM)
-  message(STATUS "invaders: regenerating C from ${SI_ROM}")
+  message(STATUS "invaders: regenerating C from ${SI_ROM_PATH}")
 else()
   set(SI_GEN_C "${SI_COMMITTED_C}")
   message(STATUS "invaders: using committed ${SI_GEN_C}")
 endif()
 if(NOT have_rom)
-  message(STATUS "invaders: ROM not found at ${SI_ROM} - it is still needed at run time "
+  message(STATUS "invaders: ROM not found at ${SI_ROM_PATH} - it is still needed at run time "
                  "(next to the executable or passed on the command line); tests are skipped")
 endif()
 
@@ -127,7 +169,7 @@ if(INVADERS_BUILD_FRONTEND)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL3::SDL3> "$<TARGET_FILE_DIR:invaders>")
   if(have_rom)
     add_custom_command(TARGET invaders POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SI_ROM}" "$<TARGET_FILE_DIR:invaders>/space-invaders.rom")
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SI_ROM_PATH}" "$<TARGET_FILE_DIR:invaders>/space-invaders.rom")
   endif()
   if(EXISTS "${SI_SOUNDS_DIR}")
     add_custom_command(TARGET invaders POST_BUILD
@@ -162,7 +204,7 @@ if(INVADERS_BUILD_TESTS)
   add_test(NAME lockstep_vs_interpreter
     COMMAND ${CMAKE_COMMAND}
       -DRECOMP=$<TARGET_FILE:si_headless> -DINTERP=$<TARGET_FILE:si_headless_interp>
-      -DROM=${SI_ROM} -DFRAMES=60000 -DMODE=${cmp_mode} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/lockstep
+      -DROM=${SI_ROM_PATH} -DFRAMES=60000 -DMODE=${cmp_mode} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/lockstep
       -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare.cmake)
   endif()
 
