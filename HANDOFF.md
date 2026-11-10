@@ -28,6 +28,8 @@ Commits on `main`, in order:
 | `60c0121` | Generated C committed; CMake can build without Python or the ROM |
 | `4797c1c` | `build.sh` / `build.bat` with dependency fetching |
 | `26fe9d5` | ROM (`roms/invaders.zip`) and samples (`sounds/`) committed; zip read directly |
+| `8629a94` | HANDOFF.md and CLAUDE.md |
+| (next) | README screenshots; `050E` hint fix; attract-mode lock-step test with a miss check |
 
 ## How it works (one paragraph)
 
@@ -48,6 +50,7 @@ video RAM.
 recomp/recomp8080.py      the recompiler (Python 3, standard library only)
 generated/invaders_recomp.c  recompiler output, COMMITTED (~9,100 lines)
 config/invaders.hints     7 extra entry points (PCHL targets) - see "Indirect jumps"
+docs/screenshots/         README images (captured with si_headless --ppm-at)
 config/invaders.sym       168 routine / 192 RAM / 9 port names from Computer Archeology
 runtime/cpu8080.h|.c      CPU state struct, cpu_irq, cpu_reset, parity table, recomp_miss
 runtime/interp8080.c      reference interpreter (independent of the recompiler templates)
@@ -112,6 +115,16 @@ build.sh / build.bat      one-step builds that fetch dependencies
    - `tools/make_hints.py` derived 7 hints from interpreter coverage of a 60,000-frame
      scripted session: `026F`, `028E`, `03BB`, `0476`, `04B6`, `050F`, `0682`. Coverage
      went from 1,627 to 2,280 instructions.
+   - **Later fix:** while capturing README screenshots, a long attract-only run hit
+     `050E` 67 times through the fallback. That play script always inserted a coin at
+     frame 300, so it never reached the "INSERT CCOIN" gag (task 4: an alien shoots the
+     extra C). `050E` is `POP HL` falling into `050F`, so it replaced `050F` in the
+     hints; there are now 2,281 instructions.
+   - The lock-step tests had no miss check, because the fallback hides misses. An
+     attract-mode lock-step test was added, and both tests now fail on any miss.
+   - The first version of that check never fired: `tests/compare.cmake` lacked
+     `cmake_minimum_required`, so CMP0054 was OLD and `"RECOMP"` was dereferenced. It
+     was verified to fail on the old generated C and pass on the new.
    - They match the listing's `GameObj0`–`GameObj4` labels (player, player shot, alien
      shots, saucer).
    - `RECOMP_FALLBACK` (on by default) interprets anything still undiscovered. The
@@ -170,6 +183,7 @@ build.sh / build.bat      one-step builds that fetch dependencies
 | Interpreter: TST8080, 8080PRE, CPUTEST, 8080EXM | all PASS (EXM 25/25 CRCs) |
 | Differential fuzz (`tools/fuzz_gen.py` seed 1: 40 programs × 25 random states, opt and no-opt builds) | 2,000 comparisons, 0 mismatches |
 | Recompiled game vs interpreter, 60,000 scripted frames (attract, coins, 1P and 2P games with random play, tilt) | identical every frame: full state with `--no-flag-opt`, everything except flags and the stack page with flag elimination on |
+| Recompiled game vs interpreter, attract only (20,000 frames in CTest; 100,000 by hand) | identical, 0 misses (after the `050E` fix) |
 | Final frame image, recompiled vs interpreter | pixel-identical |
 | SDL3 game, Linux vs Windows (Wine, offscreen), frame 900 | pixel-identical |
 | Fresh-copy `./build.sh --test` | both CTest tests pass; ROM assembled and verified |
@@ -190,6 +204,10 @@ single function produced for 12,000-instruction fuzz images. Use smaller images
 
 ## Known limitations and ideas
 
+- **The game writes to ROM space.** Over 100,000 attract frames there were about
+  13,800 writes. `DrawSprite` (`15DE`) stores sprite bytes just past the end of video
+  RAM (`HL=40xx`), which mirrors onto ROM. Real hardware ignores them, and so does the
+  board model.
 - **Self-modifying code is not supported** (inherent to static recompilation). The
   exercisers therefore only validate the interpreter.
 - **Not modelled:**

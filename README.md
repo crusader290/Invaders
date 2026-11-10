@@ -8,6 +8,16 @@ every reachable instruction in the ROM becomes a few lines of C.
 It started from [cbeust/space-invade.rs](https://github.com/cbeust/space-invade.rs), an
 8080 emulator in Rust, and uses the hardware documentation that project links to.
 
+| | | |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/title-score-table.png" width="224" alt="Title screen with the score advance table"> | <img src="docs/screenshots/upside-down-y.png" width="224" alt="An alien drags the upside-down Y away from PLAY"> | <img src="docs/screenshots/gameplay.png" width="224" alt="A game in progress with the saucer and an exploding invader"> |
+| Title and score table | The upside-down "Y" gag | Playing: saucer overhead, an invader exploding |
+| <img src="docs/screenshots/attract-demo.png" width="224" alt="Attract-mode demo game"> | <img src="docs/screenshots/insert-ccoin.png" width="224" alt="An alien shoots the extra C in INSERT CCOIN"> | |
+| Attract-mode demo | The "INSERT CCOIN" gag | |
+
+*Frames captured from the recompiled code with `si_headless --ppm-at` (same colour overlay
+as the SDL3 frontend), shown at 2×.*
+
 ```
 space-invaders.rom ──► recomp/recomp8080.py ──► generated/invaders_recomp.c ──► C compiler ──► invaders(.exe)
                          + config/invaders.hints     + runtime/, machines/invaders/, hosts/main_sdl3.c
@@ -145,15 +155,17 @@ object's handler with `PCHL`, after planting `026F` as the return address with `
 Those handlers are only named in RAM, so static analysis alone can't find them.
 `config/invaders.hints` lists the seven extra entry points: `026F` plus the
 `GameObj0`–`GameObj4` handlers (player, player shot, the three alien shot types,
-and the saucer). This is the same kind of function list that tools like N64Recomp use.
-The hints were produced by `tools/make_hints.py` from interpreter coverage of a
-60,000-frame scripted session, and they match the handler labels in the Computer
+and the saucer). One of them, `050E`, is the attract-mode task where an alien shoots
+the extra C in "INSERT CCOIN"; it falls through into the squiggly-shot handler at `050F`.
+This is the same kind of function list that tools like N64Recomp use. The hints were
+produced by `tools/make_hints.py` from interpreter coverage of a 60,000-frame scripted
+play session plus an attract-only session, and they match the labels in the Computer
 Archeology listing.
 
 If the recompiled code were ever asked to run an address it never saw, the
 `RECOMP_FALLBACK` build option (on by default) interprets that instruction and continues.
 With it off, the program stops and names the routine (`PC 1234 (DrawAlien+0x12)`).
-In testing the miss count is zero.
+In testing the miss count is zero, and the lock-step tests fail if it ever isn't.
 
 ### Symbols
 
@@ -196,9 +208,12 @@ Based on the Computer Archeology hardware page (which quotes MAME's `mw8080bw` d
 | Reference interpreter vs `8080EXM`, `8080PRE`, `TST8080`, `CPUTEST` | all pass (8080EXM: all 25 CRC groups) |
 | Differential fuzz: random programs, recompiled vs interpreter, 2,000 runs | identical registers, flags and memory |
 | Recompiled game vs interpreter, 60,000-frame scripted session (attract, 1P and 2P games, tilt) | identical state every frame (full state with `RECOMP_FLAG_OPT=OFF`; excluding flags and the stack page with it on) |
+| Recompiled game vs interpreter, attract mode only (no coins), 20,000 frames in CTest and 100,000 by hand | identical state every frame; no interpreter fallback |
 | Final frame image | pixel-identical |
 
-`ctest` runs the lock-step comparison and the committed-C freshness check, plus the CPU diagnostic if
+`ctest` runs the two lock-step comparisons (scripted play and attract mode, each failing
+if the recompiled build ever needs the interpreter fallback) and the committed-C
+freshness check, plus the CPU diagnostic if
 `-DCPM_TEST_PROGRAM=path/to/cpudiag.bin` is given. The exercisers modify their own code
 (they build each test instruction in RAM), so they validate the interpreter. A static
 recompiler, by design, can't run self-modifying code.
@@ -225,7 +240,8 @@ machines/invaders/        Space Invaders board: memory map, ports, shift registe
 machines/cpm/             minimal CP/M BDOS for running cpudiag and the exercisers
 machines/fuzz/            write-protected-code machine for differential fuzzing
 hosts/main_sdl3.c         the game (SDL3)
-hosts/si_headless.c       scripted headless runner (digests, screenshots, coverage)
+hosts/si_headless.c       scripted headless runner (digests, screenshots, coverage, --attract)
+docs/screenshots/         README images
 hosts/cpm_run.c           CP/M test runner
 hosts/fuzz_run.c          differential fuzz runner
 tools/                    make_hints.py, import_listing.py, fuzz_gen.py

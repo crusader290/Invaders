@@ -32,7 +32,7 @@
 #define CHK(x) do { if (LIMIT_HIT()) { cpu.pc = (x); return; } } while (0)
 #define DYN() do { if (LIMIT_HIT()) return; goto dispatch; } while (0)
 
-const unsigned recomp_insn_count = 2280;
+const unsigned recomp_insn_count = 2281;
 
 void cpu_run(uint64_t limit)
 {
@@ -676,6 +676,7 @@ dispatch:
     case 0x0505: goto L_0505;
     case 0x0508: goto L_0508;
     case 0x050B: goto L_050B;
+    case 0x050E: goto L_050E;
     case 0x050F: goto L_050F;
     case 0x0512: goto L_0512;
     case 0x0514: goto L_0514;
@@ -4191,6 +4192,9 @@ L_0508: /* 0508: LHLD 0x2076 (aShotCFirLSB) */
     CYC(16); CHK(0x050B);
 L_050B: /* 050B: JMP 0x067E */
     CYC(10); CHK(0x067E); goto L_067E;
+L_050E: /* 050E: POP H */
+    L = RD(SP); H = RD((uint16_t)(SP + 1)); SP += 2;
+    CYC(10); CHK(0x050F);
 L_050F: /* 050F: LXI D,0x2055 (squShotStatus) */
     D = 0x20; E = 0x55;
     CYC(10); CHK(0x0512);

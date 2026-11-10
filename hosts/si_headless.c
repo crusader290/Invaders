@@ -3,7 +3,8 @@
  * random movement and firing, a tilt) and prints a state digest every frame.
  *
  *   si_headless ROM FRAMES [--digest | --digest-full | --digest-nostack]
- *               [--ppm out.ppm] [--cov coverage.txt]
+ *               [--ppm out.ppm] [--ppm-at F1,F2,... PREFIX] [--cov coverage.txt] [--attract]
+ * --attract never inserts a coin, so the game stays in its attract/demo loop.
  * --digest-full hashes RAM + registers + flags; --digest-nostack skips the flags
  * and the stack page (2300-23FF). */
 #include <stdio.h>
@@ -62,8 +63,9 @@ static void write_ppm(const char *path)
             uint8_t rgb[3] = {0, 0, 0};
             if (on) {
                 rgb[0] = rgb[1] = rgb[2] = 255;
-                if (y >= 32 && y < 64) { rgb[1] = 40; rgb[2] = 40; }              /* red band */
-                else if ((y >= 184 && y < 240) || (y >= 240 && x >= 16 && x < 134)) { rgb[0] = 40; rgb[2] = 40; }
+                /* same overlay colours as hosts/main_sdl3.c */
+                if (y >= 32 && y < 64) { rgb[1] = 0x30; rgb[2] = 0x30; }          /* red band */
+                else if ((y >= 184 && y < 240) || (y >= 240 && x >= 16 && x < 134)) { rgb[0] = 0x30; rgb[2] = 0x30; }
             }
             fwrite(rgb, 1, 3, f);
         }
@@ -72,23 +74,26 @@ static void write_ppm(const char *path)
 
 int main(int argc, char **argv)
 {
-    const char *ppm = NULL, *cov = NULL;
-    int frames, want_digest = 0, bench = 0, col = 0;
-    if (argc < 3) { fprintf(stderr, "usage: %s ROM FRAMES [--digest] [--ppm F] [--cov F] [--bench]\n", argv[0]); return 2; }
+    const char *ppm = NULL, *cov = NULL, *ppm_at = NULL, *ppm_prefix = NULL;
+    int frames, want_digest = 0, bench = 0, col = 0, attract = 0;
+    if (argc < 3) { fprintf(stderr, "usage: %s ROM FRAMES [--digest] [--ppm F] [--ppm-at F1,F2 PREFIX] [--cov F]\n", argv[0]); return 2; }
     frames = atoi(argv[2]);
     for (int i = 3; i < argc; i++) {
         if (!strcmp(argv[i], "--digest")) want_digest = 1;
         else if (!strcmp(argv[i], "--bench")) bench = 1;
+        else if (!strcmp(argv[i], "--attract")) attract = 1;
         else if (!strcmp(argv[i], "--digest-full")) { want_digest = 1; col = 2; }
         else if (!strcmp(argv[i], "--digest-nostack")) { want_digest = 1; col = 3; }
         else if (!strcmp(argv[i], "--ppm") && i + 1 < argc) ppm = argv[++i];
+        else if (!strcmp(argv[i], "--ppm-at") && i + 2 < argc) { ppm_at = argv[++i]; ppm_prefix = argv[++i]; }
         else if (!strcmp(argv[i], "--cov") && i + 1 < argc) cov = argv[++i];
     }
     if (!si_load_rom(argv[1])) { fprintf(stderr, "cannot load %s\n", argv[1]); return 2; }
     si_reset();
     clock_t t0 = clock();
     for (int fr = 0; fr < frames; fr++) {
-        script_inputs(fr);
+        if (attract) { si_in1 = 0x08; si_in2 = 0x00; }   /* no coins: attract mode only */
+        else script_inputs(fr);
         si_run_frame();
         if (want_digest) {
             if (col == 2) printf("%d %08x\n", fr, digest(0));
@@ -96,6 +101,21 @@ int main(int argc, char **argv)
             else printf("%d %08x %08x\n", fr, digest(0), digest(1));
         }
         if (ppm && fr == frames - 1) write_ppm(ppm);
+        if (ppm_at) {
+            /* write PREFIX_<frame>.ppm for every frame number in the comma list */
+            const char *p = ppm_at;
+            while (*p) {
+                char *end;
+                long want = strtol(p, &end, 10);
+                if (end == p) break;
+                if (want == fr) {
+                    char name[1024];
+                    snprintf(name, sizeof name, "%s_%d.ppm", ppm_prefix, fr);
+                    write_ppm(name);
+                }
+                p = *end == ',' ? end + 1 : end;
+            }
+        }
     }
     double secs = (double)(clock() - t0) / CLOCKS_PER_SEC;
     fprintf(stderr, "%d frames, %llu cycles, %.3fs CPU (%.0fx real time), misses=%lu rom_writes=%lu\n",

@@ -206,6 +206,14 @@ if(INVADERS_BUILD_TESTS)
       -DRECOMP=$<TARGET_FILE:si_headless> -DINTERP=$<TARGET_FILE:si_headless_interp>
       -DROM=${SI_ROM_PATH} -DFRAMES=60000 -DMODE=${cmp_mode} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/lockstep
       -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare.cmake)
+  # Attract mode only (no coins): reaches the splash-screen animations, such as
+  # the "CCOIN" gag, which the scripted play session skips.
+  add_test(NAME lockstep_attract_mode
+    COMMAND ${CMAKE_COMMAND}
+      -DRECOMP=$<TARGET_FILE:si_headless> -DINTERP=$<TARGET_FILE:si_headless_interp>
+      -DROM=${SI_ROM_PATH} -DFRAMES=20000 -DMODE=${cmp_mode} -DEXTRA=--attract
+      -DOUT=${CMAKE_CURRENT_BINARY_DIR}/lockstep_attract
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare.cmake)
   endif()
 
   # The committed generated/invaders_recomp.c must match what the recompiler

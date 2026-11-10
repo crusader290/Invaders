@@ -13,10 +13,13 @@ build.bat test                    # Windows (Visual Studio 2019+), confirmed wor
 cmake -B build -G Ninja && cmake --build build && (cd build && ctest --output-on-failure)
 ```
 
-CTest has two tests, and both must pass:
+CTest has three tests, and all must pass:
 
 - `lockstep_vs_interpreter`: the recompiled game vs the reference interpreter over
   60,000 scripted frames.
+- `lockstep_attract_mode`: the same over 20,000 frames of attract mode with no coins
+  inserted, which reaches splash animations that the play script skips.
+  Both lock-step tests fail if the recompiled build ever falls back to the interpreter.
 - `committed_c_up_to_date`: present only when the C was regenerated, i.e. Python is
   available.
 
@@ -46,8 +49,11 @@ CTest has two tests, and both must pass:
 - **Invariant for flag elimination:** dynamic exits (RET, RCC, PCHL, HLT, unknown
   targets) must stay "all flags live".
 - **When the hints change:** if the game reaches new code through `PCHL`, rebuild the
-  hints from coverage (recipe below) rather than guessing. The miss counter printed by
-  `si_headless` must stay 0.
+  hints from coverage of **both** a play session and an `--attract` session (recipe
+  below) rather than guessing. The miss counter printed by `si_headless` must stay 0.
+- **`tests/compare.cmake` must keep its `cmake_minimum_required` line.** Without it,
+  script mode uses old CMP0054 behaviour, `"RECOMP"` is read as a variable, and the
+  miss check silently never fires (this happened once).
 - **ROM:** `roms/invaders.zip`, chips h, g, f, e concatenated. SHA-256
   `7446e0994117596de5206519e693f8875ff3455e0be121d5cb975c3bcc224c4e`. Local override:
   `roms/space-invaders.rom` (git-ignored) or `-DSI_ROM=`.
@@ -64,9 +70,17 @@ B=build/linux-release
 $B/si_headless $B/rom/space-invaders.rom 60000 --digest-nostack > a.txt
 $B/si_headless_interp $B/rom/space-invaders.rom 60000 --digest-nostack > b.txt && cmp a.txt b.txt
 
-# rebuild hints from interpreter coverage
-$B/si_headless_interp $B/rom/space-invaders.rom 60000 --cov cov.txt
+# rebuild hints from interpreter coverage (play session + attract-only session)
+$B/si_headless_interp $B/rom/space-invaders.rom 60000 --cov cov_play.txt
+$B/si_headless_interp $B/rom/space-invaders.rom 20000 --attract --cov cov_attract.txt
+sort -u cov_play.txt cov_attract.txt > cov.txt
 python3 tools/make_hints.py $B/rom/space-invaders.rom cov.txt config/invaders.hints --entry 0 --entry 8 --entry 0x10
+# (make_hints.py overwrites the file's comment header; restore the notes on 050E afterwards)
+
+# README screenshots (frames: title 610, upside-down Y 2780, demo 1160, CCOIN 3960 in
+# attract mode; gameplay 2790 in the play script); scale 2x with nearest-neighbour
+$B/si_headless $B/rom/space-invaders.rom 4000 --attract --ppm-at 610,1160,2780,3960 a
+$B/si_headless $B/rom/space-invaders.rom 2800 --ppm-at 2790 p
 
 # refresh symbols from the Computer Archeology listing
 git clone --depth 1 https://github.com/topherCantrell/computerarcheology ca
